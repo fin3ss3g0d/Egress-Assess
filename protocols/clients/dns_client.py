@@ -74,7 +74,9 @@ class Client:
                     print('[*] Shutting down...')
                     sys.exit()
             else:
-                encoded_data = base64.b64encode(str(struct.pack('>I', packet_number)) + ".:|:." + data_to_transmit[byte_reader:byte_reader + self.length])
+                encoded_data = base64.b64encode(
+                    struct.pack('>I', packet_number) + b".:|:." + data_to_transmit[byte_reader:byte_reader + self.length]
+                )
 
                 while len(encoded_data) > self.max_length:
 
