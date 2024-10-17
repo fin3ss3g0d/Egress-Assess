@@ -2055,7 +2055,14 @@ function Invoke-EgressAssess
 
                     if (!$DefaultLength)
                     {
-                        $DefaultLength = 35
+                        if ($txtmode)
+                        {
+                            $DefaultLength = 35
+                        }
+                        else
+                        {
+                            $DefaultLength = 22
+                        }
                     }
                     if ($DefaultLength -gt 36)
                     {
@@ -2131,14 +2138,26 @@ function Invoke-EgressAssess
                                     $PacketsToSend = 7
                                 }
                             }
-                            $EncodedData += [System.Convert]::ToBase64String( $DataBytes)
+                            if ($txtmode)
+                            {
+                                $EncodedData += [System.Convert]::ToBase64String( $DataBytes)
+                            }
+                            else
+                            {
+                                $EncodedData += [System.BitConverter]::ToString($DataBytes) -replace "-"
+                            }
                             if (!$txtmode)
                             {
                                 if ($filetransfer)
                                 {
-                                    $EncodedData += "." + [System.Convert]::ToBase64String( [System.Text.encoding]::ASCII.GetBytes($filename) )
+                                    # Convert the filename into ASCII bytes, then convert to hexadecimal
+                                    $hexString = [BitConverter]::ToString([System.Text.Encoding]::ASCII.GetBytes($filename)) -replace "-"
+
+                                    # Add a dot before the hex string and append it to the encoded data
+                                    $EncodedData += "." + $hexString
                                 }
-                                $EncodedData = $EncodedData -replace "=", ".---"
+
+                                # Append the IP address
                                 $EncodedData += ".$IP"
                             }
                             $EncodedData += "`n"
@@ -2180,8 +2199,7 @@ function Invoke-EgressAssess
                                 }
                                 else
                                 {
-                                    $EncodedData += "." + [System.Convert]::ToBase64String( [System.Text.encoding]::ASCII.GetBytes($filename) )
-                                    $EncodedData = $EncodedData -replace "=", ".---"
+                                    $EncodedData += "." + [BitConverter]::ToString([System.Text.Encoding]::ASCII.GetBytes($filename)) -replace "-"
                                     $EncodedData += ".$IP"
                                 }
                                 $response = Send-DNSPacket $EncodedData $txtmode

@@ -1,6 +1,6 @@
 """
 Author: @butlerallenj
-Contributors: @khr0x40sh, @ruddawg26
+Contributors: @khr0x40sh, @ruddawg26, @fin3ss3g0d
 
 This is an improved version of the DNS Server module. Using DNSLib, this module can listen and
 respond to requests from both TXT and A records, decode the requests utilizing the correct format,
@@ -23,6 +23,7 @@ import socketserver
 import threading
 import sys
 import datetime
+import binascii
 from dnslib import *
 from common import helpers
 
@@ -143,26 +144,30 @@ class BaseRequestHandler(socketserver.BaseRequestHandler):
         global LOOT_PATH, FILE_DICT, FILE_STATUS
 
         if data:
-            with open(LOOT_PATH + file_name, write_mode) as f:
+            # Write a single chunk of data in binary mode
+            with open(LOOT_PATH + file_name, write_mode + 'b') as f:
                 f.write(data)
         else:
             helpers.received_file(file_name)
             missing_keys = []
             write_dict = FILE_DICT
-            if len(list(write_dict.keys())) < 2:
+    
+            # Ensure we have received all expected file chunks
+            expected_keys = {str(i) for i in range(1, int(FILE_STATUS) + 1)}
+            received_keys = set(write_dict.keys())
+    
+            missing_keys = expected_keys - received_keys
+            if missing_keys:
+                print(f"[-] ERROR: The following keys were missing from FILE_DICT!\n{', '.join(missing_keys)}")
                 return
-
-            with open(LOOT_PATH + file_name, write_mode) as f:
+    
+            # Write the complete file from the stored chunks in binary mode
+            with open(LOOT_PATH + file_name, write_mode + 'b') as f:
                 for dict_key in range(1, int(FILE_STATUS) + 1):
-                    try:
-                        content = write_dict[str(dict_key)]
-                        f.write(content)
-                    except Exception:
-                        missing_keys.append(dict_key)
-
-            if len(missing_keys):
-                print('[-] ERROR: The following keys were missing from FILE_DICT!\n{}'.format(', '.join(missing_keys)))
-
+                    content = write_dict[str(dict_key)]
+                    f.write(content)
+    
+            # Clear the globals after writing the file
             self.clear_globals()
 
         return
@@ -179,24 +184,32 @@ class BaseRequestHandler(socketserver.BaseRequestHandler):
 
         try:
             if self.ENDFILESTRING in encoded_qname:
-                file_name = encoded_qname.split(self.ENDFILESTRING)[1].rstrip('.')
+                file_name = str(encoded_qname.split(self.ENDFILESTRING)[1]).rstrip('.')
                 self.write_file(file_name)
                 return
-
-            decoded = base64.b64decode(encoded_qname)
-
-            if self.preamble not in decoded:
+    
+            # Ensure encoded_qname is bytes before decoding
+            decoded = base64.b64decode(encoded_qname.encode('utf-8'))
+    
+            # Ensure preamble is also bytes for comparison
+            preamble_bytes = self.preamble.encode('utf-8')
+    
+            if preamble_bytes not in decoded:
+                # Write the data chunk to file
                 self.write_file(FILE_NAME, 'a', data=decoded)
                 return
-
-            parts = decoded.split(self.preamble)
-            FILE_STATUS = self.decode_file_status(parts[0])
+    
+            # Split the data by preamble to extract the status and file data
+            parts = decoded.split(preamble_bytes)
+            FILE_STATUS = self.decode_file_status(parts[0])  # Decode file status
             file_data = parts[1]
-
-            if FILE_STATUS not in FILE_DICT:
-                FILE_DICT[FILE_STATUS] = file_data
-                self.upload_feedback()
-
+    
+            # Store the received data chunk in FILE_DICT
+            # Ensures FILE_STATUS is stored as a string to match write_file logic
+            FILE_DICT[str(FILE_STATUS)] = file_data
+    
+            self.upload_feedback()
+    
         except Exception as e:
             print(f'[-] handle_dns_txt Error: {e} {encoded_qname}')
 
@@ -206,27 +219,25 @@ class BaseRequestHandler(socketserver.BaseRequestHandler):
         global FILE_DICT, FILE_NAME, LAST_PACKET, FILE_STATUS
 
         try:
-            seperator = '.---'
-            if seperator in encoded_qname:
-                encoded_qname = encoded_qname.replace(seperator, '=')
-
             parts = encoded_qname.split('.')
 
-            if self.ENDFILESTRING == parts[0]:
-                file_name = base64.b64decode(parts[1])
+            if self.ENDFILESTRING.lower() in parts[0].lower():
+                file_name = binascii.unhexlify(parts[1]).decode('utf-8')
                 self.write_file(file_name)
                 return
 
-            data = base64.b64decode(parts[0])
+            data = binascii.unhexlify(parts[0].encode('utf-8'))
 
-            if self.preamble in data:
+            # Ensure preamble is also bytes for comparison
+            preamble_bytes = self.preamble.encode('utf-8')
+            if preamble_bytes in data:
                 try:
-                    data_parts = data.split(self.preamble)
+                    data_parts = data.split(preamble_bytes)
 
                     FILE_STATUS = self.decode_file_status(data_parts[0])
                     file_data = data_parts[1]
 
-                    FILE_DICT[FILE_STATUS] = file_data
+                    FILE_DICT[str(FILE_STATUS)] = file_data
                     self.upload_feedback()
                 except Exception as e:
                     print(f'[-] Error handle_dns_resolved: {e} {data}')
