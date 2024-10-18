@@ -2408,8 +2408,8 @@ function Invoke-EgressAssess
                 #Ans       Auth    Add RR
                 [Byte[]]$Mess2= 0x00,0x00,0x00
 
-                $dns_Servers =  ipconfig /all | where-object {$_ -match "DNS Servers"} | foreach-object{$_.Split(":")[1]}
-                
+                $dns_Servers = (Get-DnsClientServerAddress -AddressFamily IPv4).ServerAddresses
+
                 $postS = 0x00,0x00,0x01,0x00,0x01
             }
             
